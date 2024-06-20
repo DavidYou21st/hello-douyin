@@ -1,0 +1,7 @@
+*.DS_Store
+/vendor
+sftp-config.json
+/*.php
+/.idea
+/.split
+/composer.lock
