@@ -7,6 +7,7 @@ namespace HelloDouYin\MiniProgram;
 use HelloDouYin\Kernel\Contracts\AccessToken as AccessTokenInterface;
 use HelloDouYin\Kernel\Contracts\Server as ServerInterface;
 use HelloDouYin\Kernel\Encryptor;
+use HelloDouYin\Kernel\Exceptions\InvalidArgumentException;
 use HelloDouYin\Kernel\Exceptions\InvalidConfigException;
 use HelloDouYin\Kernel\HttpClient\AccessTokenAwareClient;
 use HelloDouYin\Kernel\HttpClient\AccessTokenExpiredRetryStrategy;
@@ -17,10 +18,10 @@ use HelloDouYin\Kernel\Traits\InteractWithClient;
 use HelloDouYin\Kernel\Traits\InteractWithConfig;
 use HelloDouYin\Kernel\Traits\InteractWithHttpClient;
 use HelloDouYin\Kernel\Traits\InteractWithServerRequest;
-use HelloDouYin\MiniProgram\Contracts\Account as AccountInterface;
-use HelloDouYin\MiniProgram\Contracts\Application as ApplicationInterface;
-use JetBrains\PhpStorm\Pure;
+use HelloDouYin\OpenPlatform\Contracts\Account as AccountInterface;
+use HelloDouYin\OpenPlatform\Application as BaseApplication;
 use Psr\Log\LoggerAwareTrait;
+use ReflectionException;
 use Symfony\Component\HttpClient\Response\AsyncContext;
 use Symfony\Component\HttpClient\RetryableHttpClient;
 
@@ -28,10 +29,8 @@ use function array_merge;
 use function is_null;
 use function str_contains;
 
-/**
- * @psalm-suppress PropertyNotSetInConstructor
- */
-class Application implements ApplicationInterface
+
+class Application extends BaseApplication
 {
     use InteractWithCache;
     use InteractWithClient;
@@ -50,12 +49,13 @@ class Application implements ApplicationInterface
 
     public function getAccount(): AccountInterface
     {
-        if (! $this->account) {
+        if (!$this->account) {
             $this->account = new Account(
-                appId: (string) $this->config->get('app_id'),
-                secret: (string) $this->config->get('secret'),
-                token: (string) $this->config->get('token'),
-                aesKey: (string) $this->config->get('aes_key'),
+                appId: (string)$this->config->get('app_id'),
+                secret: (string)$this->config->get('secret'),
+                token: (string)$this->config->get('token'),
+                aesKey: (string)$this->config->get('aes_key'),
+                isSandbox: (bool)$this->config->get('is_sandbox'),
             );
         }
 
@@ -70,11 +70,11 @@ class Application implements ApplicationInterface
     }
 
     /**
-     * @throws \HelloDouYin\Kernel\Exceptions\InvalidConfigException
+     * @throws InvalidConfigException
      */
     public function getEncryptor(): Encryptor
     {
-        if (! $this->encryptor) {
+        if (!$this->encryptor) {
             $token = $this->getAccount()->getToken();
             $aesKey = $this->getAccount()->getAesKey();
 
@@ -101,13 +101,13 @@ class Application implements ApplicationInterface
     }
 
     /**
-     * @throws \ReflectionException
-     * @throws \HelloDouYin\Kernel\Exceptions\InvalidArgumentException
+     * @throws ReflectionException
+     * @throws InvalidArgumentException
      * @throws \Throwable
      */
     public function getServer(): Server|ServerInterface
     {
-        if (! $this->server) {
+        if (!$this->server) {
             $this->server = new Server(
                 request: $this->getRequest(),
                 encryptor: $this->getAccount()->getAesKey() ? $this->getEncryptor() : null
@@ -126,13 +126,13 @@ class Application implements ApplicationInterface
 
     public function getAccessToken(): AccessTokenInterface
     {
-        if (! $this->accessToken) {
+        if (!$this->accessToken) {
             $this->accessToken = new AccessToken(
                 appId: $this->getAccount()->getAppId(),
                 secret: $this->getAccount()->getSecret(),
                 cache: $this->getCache(),
                 httpClient: $this->getHttpClient(),
-                stable: $this->config->get('use_stable_access_token', false)
+                isSandbox: $this->getAccount()->isSandbox(),
             );
         }
 
@@ -146,7 +146,7 @@ class Application implements ApplicationInterface
         return $this;
     }
 
-    #[Pure]
+    
     public function getUtils(): Utils
     {
         return new Utils($this);
@@ -156,44 +156,47 @@ class Application implements ApplicationInterface
     {
         $httpClient = $this->getHttpClient();
 
-        if ((bool) $this->config->get('http.retry', false)) {
+        if ((bool)$this->config->get('http.retry', false)) {
             $httpClient = new RetryableHttpClient(
                 $httpClient,
                 $this->getRetryStrategy(),
-                (int) $this->config->get('http.max_retries', 2)
+                (int)$this->config->get('http.max_retries', 2)
             );
         }
 
         return (new AccessTokenAwareClient(
             client: $httpClient,
             accessToken: $this->getAccessToken(),
-            failureJudge: fn (
+            failureJudge: fn(
                 Response $response
-            ) => (bool) ($response->toArray()['errcode'] ?? 0) || ! is_null($response->toArray()['error'] ?? null),
-            throw: (bool) $this->config->get('http.throw', true),
+            ) => (bool)($response->toArray()['errcode'] ?? 0) || !is_null($response->toArray()['error'] ?? null),
+            throw: (bool)$this->config->get('http.throw', true),
         ))->setPresets($this->config->all());
     }
 
     public function getRetryStrategy(): AccessTokenExpiredRetryStrategy
     {
-        $retryConfig = RequestUtil::mergeDefaultRetryOptions((array) $this->config->get('http.retry', []));
+        $retryConfig = RequestUtil::mergeDefaultRetryOptions((array)$this->config->get('http.retry', []));
 
         return (new AccessTokenExpiredRetryStrategy($retryConfig))
             ->decideUsing(function (AsyncContext $context, ?string $responseContent): bool {
-                return ! empty($responseContent)
+                return !empty($responseContent)
                     && str_contains($responseContent, '42001')
                     && str_contains($responseContent, 'access_token expired');
             });
     }
 
     /**
+     * @param bool $isSandbox
      * @return array<string,mixed>
      */
-    protected function getHttpClientDefaultOptions(): array
+    protected function getHttpClientDefaultOptions(bool $isSandbox = false): array
     {
+        $is_sandbox = $this->config->get('is_sandbox');
         return array_merge(
-            ['base_uri' => 'https://developer.toutiao.com/'],
-            (array) $this->config->get('http', [])
+            $is_sandbox ? ['base_uri' => 'https://open-sandbox.douyin.com/'] :
+                ['base_uri' => 'https://developer.toutiao.com/'],
+            (array)$this->config->get('http', [])
         );
     }
 }

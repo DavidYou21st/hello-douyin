@@ -7,7 +7,6 @@ namespace HelloDouYin\Kernel\HttpClient;
 use Closure;
 use HelloDouYin\Kernel\Contracts\AccessToken as AccessTokenInterface;
 use HelloDouYin\Kernel\Contracts\AccessTokenAwareHttpClient as AccessTokenAwareHttpClientInterface;
-use HelloDouYin\Kernel\Traits\MockableHttpClient;
 use Symfony\Component\HttpClient\AsyncDecoratorTrait;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -27,7 +26,6 @@ class AccessTokenAwareClient implements AccessTokenAwareHttpClientInterface
 {
     use AsyncDecoratorTrait;
     use HttpClientMethods;
-    use MockableHttpClient;
     use RequestWithPresets;
     use RetryableClient;
 

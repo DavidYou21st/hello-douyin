@@ -8,7 +8,6 @@ use ArrayAccess;
 use HelloDouYin\Kernel\Contracts\Arrayable;
 use HelloDouYin\Kernel\Contracts\Jsonable;
 use HelloDouYin\Kernel\Traits\HasAttributes;
-use JetBrains\PhpStorm\Pure;
 
 /**
  * @implements ArrayAccess<string, mixed>
@@ -23,7 +22,7 @@ class Authorization implements Arrayable, ArrayAccess, Jsonable
         return (string) $this->attributes['authorization_info']['authorizer_appid'] ?? '';
     }
 
-    #[Pure]
+    
     public function getAccessToken(): AuthorizerAccessToken
     {
         return new AuthorizerAccessToken(

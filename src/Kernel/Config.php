@@ -8,7 +8,6 @@ use ArrayAccess;
 use HelloDouYin\Kernel\Contracts\Config as ConfigInterface;
 use HelloDouYin\Kernel\Exceptions\InvalidArgumentException;
 use HelloDouYin\Kernel\Support\Arr;
-use JetBrains\PhpStorm\Pure;
 
 use function strval;
 
@@ -33,7 +32,7 @@ class Config implements ArrayAccess, ConfigInterface
         $this->checkMissingKeys();
     }
 
-    #[Pure]
+    
     public function has(string $key): bool
     {
         return Arr::has($this->items, $key);
@@ -42,7 +41,6 @@ class Config implements ArrayAccess, ConfigInterface
     /**
      * @param  array<string>|string  $key
      */
-    #[Pure]
     public function get(array|string $key, mixed $default = null): mixed
     {
         if (is_array($key)) {
@@ -56,7 +54,6 @@ class Config implements ArrayAccess, ConfigInterface
      * @param  array<string>  $keys
      * @return array<string, mixed>
      */
-    #[Pure]
     public function getMany(array $keys): array
     {
         $config = [];
@@ -84,14 +81,13 @@ class Config implements ArrayAccess, ConfigInterface
     {
         return $this->items;
     }
-
-    #[Pure]
+    
     public function offsetExists(mixed $key): bool
     {
         return $this->has(strval($key));
     }
 
-    #[Pure]
+
     public function offsetGet(mixed $key): mixed
     {
         return $this->get(strval($key));

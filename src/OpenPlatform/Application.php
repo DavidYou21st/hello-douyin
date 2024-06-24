@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace HelloDouYin\OpenPlatform;
 
 use Closure;
+use HelloDouYin\DouYin;
 use HelloDouYin\Kernel\Contracts\AccessToken as AccessTokenInterface;
+use HelloDouYin\Kernel\Contracts\ProviderInterface;
 use HelloDouYin\Kernel\Contracts\Server as ServerInterface;
 use HelloDouYin\Kernel\Encryptor;
 use HelloDouYin\Kernel\Exceptions\BadResponseException;
@@ -17,11 +19,11 @@ use HelloDouYin\Kernel\Traits\InteractWithClient;
 use HelloDouYin\Kernel\Traits\InteractWithConfig;
 use HelloDouYin\Kernel\Traits\InteractWithHttpClient;
 use HelloDouYin\Kernel\Traits\InteractWithServerRequest;
-use HelloDouYin\MiniApp\Application as MiniAppApplication;
+use HelloDouYin\Kernel\Exceptions\InvalidArgumentException;
+use HelloDouYin\MiniProgram\Application as MiniProgramApplication;
 use HelloDouYin\OpenPlatform\Contracts\Account as AccountInterface;
 use HelloDouYin\OpenPlatform\Contracts\Application as ApplicationInterface;
-use HelloDouYin\OpenPlatform\Contracts\VerifyTicket as VerifyTicketInterface;
-use Psr\SimpleCache\InvalidArgumentException;
+use ReflectionException;
 use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\RedirectionExceptionInterface;
@@ -46,18 +48,17 @@ class Application implements ApplicationInterface
 
     protected ?AccountInterface $account = null;
 
-    protected ?AccessTokenInterface $componentAccessToken = null;
-
-    protected ?VerifyTicketInterface $verifyTicket = null;
+    protected ?AccessTokenInterface $accessToken = null;
+    protected ?\Closure $oauthFactory = null;
 
     public function getAccount(): AccountInterface
     {
-        if (! $this->account) {
+        if (!$this->account) {
             $this->account = new Account(
-                appId: (string) $this->config->get('app_id'), 
-                secret: (string) $this->config->get('secret'), 
-                token: (string) $this->config->get('token'), 
-                aesKey: (string) $this->config->get('aes_key'),
+                appId: (string)$this->config->get('app_id'),
+                secret: (string)$this->config->get('secret'),
+                token: (string)$this->config->get('token'),
+                aesKey: (string)$this->config->get('aes_key'),
             );
         }
 
@@ -71,28 +72,16 @@ class Application implements ApplicationInterface
         return $this;
     }
 
-    public function getVerifyTicket(): VerifyTicketInterface
+    public function setOAuthFactory(callable $factory): static
     {
-        if (! $this->verifyTicket) {
-            $this->verifyTicket = new VerifyTicket(
-                appId: $this->getAccount()->getAppId(),
-                cache: $this->getCache(),
-            );
-        }
-
-        return $this->verifyTicket;
-    }
-
-    public function setVerifyTicket(VerifyTicketInterface $verifyTicket): static
-    {
-        $this->verifyTicket = $verifyTicket;
+        $this->oauthFactory = fn(Application $app): DouYin => $factory($app);
 
         return $this;
     }
 
     public function getEncryptor(): Encryptor
     {
-        if (! $this->encryptor) {
+        if (!$this->encryptor) {
             $this->encryptor = new Encryptor(
                 appId: $this->getAccount()->getAppId(),
                 token: $this->getAccount()->getToken(),
@@ -112,29 +101,16 @@ class Application implements ApplicationInterface
     }
 
     /**
-     * @throws \ReflectionException
-     * @throws \HelloDouYin\Kernel\Exceptions\InvalidArgumentException
+     * @throws ReflectionException
+     * @throws InvalidArgumentException
      * @throws \Throwable
      */
     public function getServer(): Server|ServerInterface
     {
-        if (! $this->server) {
+        if (!$this->server) {
             $this->server = new Server(
                 encryptor: $this->getEncryptor(),
                 request: $this->getRequest()
-            );
-        }
-
-        if ($this->server instanceof Server) {
-            $this->server->withDefaultVerifyTicketHandler(
-                function (Message $message, Closure $next): mixed {
-                    $ticket = $this->getVerifyTicket();
-                    if (\is_callable([$ticket, 'setTicket'])) {
-                        $ticket->setTicket($message->ComponentVerifyTicket);
-                    }
-
-                    return $next($message);
-                }
             );
         }
 
@@ -150,61 +126,56 @@ class Application implements ApplicationInterface
 
     public function getAccessToken(): AccessTokenInterface
     {
-        return $this->getComponentAccessToken();
-    }
-
-    public function getComponentAccessToken(): AccessTokenInterface
-    {
-        if (! $this->componentAccessToken) {
-            $this->componentAccessToken = new ComponentAccessToken(
+        if (!$this->accessToken) {
+            $this->accessToken = new AccessToken(
                 appId: $this->getAccount()->getAppId(),
                 secret: $this->getAccount()->getSecret(),
-                verifyTicket: $this->getVerifyTicket(),
                 cache: $this->getCache(),
                 httpClient: $this->getHttpClient(),
+                isSandbox: $this->getAccount()->isSandbox(),
             );
         }
 
-        return $this->componentAccessToken;
+        return $this->accessToken;
     }
 
-    public function setComponentAccessToken(AccessTokenInterface $componentAccessToken): static
+    public function getOauthClientToken(): AccessTokenInterface
     {
-        $this->componentAccessToken = $componentAccessToken;
+        if (!$this->accessToken) {
+            $this->accessToken = new AccessToken(
+                appId: $this->getAccount()->getAppId(),
+                secret: $this->getAccount()->getSecret(),
+                cache: $this->getCache(),
+                httpClient: $this->getHttpClient(),
+                isSandbox: $this->getAccount()->isSandbox(),
+            );
+        }
 
-        return $this;
+        return $this->accessToken;
     }
 
-    /**
-     * @throws HttpException
-     * @throws TransportExceptionInterface
-     * @throws ServerExceptionInterface
-     * @throws RedirectionExceptionInterface
-     * @throws DecodingExceptionInterface
-     * @throws ClientExceptionInterface
-     * @throws BadResponseException
-     */
-    public function getAuthorization(string $authorizationCode): Authorization
+    public function getOAuth(): ProviderInterface
     {
-        $response = $this->getClient()->request(
-            'POST',
-            'cgi-bin/component/api_query_auth',
-            [
-                'json' => [
-                    'component_appid' => $this->getAccount()->getAppId(),
-                    'authorization_code' => $authorizationCode,
-                ],
-            ]
-        )->toArray(false);
+        if (!$this->oauthFactory) {
+            $this->oauthFactory = fn(self $app): ProviderInterface => (new DouYin(
+                [
+                    'client_id' => $this->getAccount()->getAppId(),
+                    'client_secret' => $this->getAccount()->getSecret(),
+                    'redirect_url' => $this->config->get('oauth.redirect_url'),
+                ]
+            ))->scopes((array)$this->config->get('oauth.scopes', ['user_info']));
+        }
 
-        if (empty($response['authorization_info'])) {
-            throw new HttpException('Failed to get authorization_info: '.json_encode(
-                $response,
-                JSON_UNESCAPED_UNICODE
+        $provider = call_user_func($this->oauthFactory, $this);
+
+        if (!$provider instanceof ProviderInterface) {
+            throw new InvalidArgumentException(sprintf(
+                'The factory must return a %s instance.',
+                ProviderInterface::class
             ));
         }
 
-        return new Authorization($response);
+        return $provider;
     }
 
     /**
@@ -231,55 +202,13 @@ class Application implements ApplicationInterface
         )->toArray(false);
 
         if (empty($response['authorizer_access_token'])) {
-            throw new HttpException('Failed to get authorizer_access_token: '.json_encode(
-                $response,
-                JSON_UNESCAPED_UNICODE
-            ));
+            throw new HttpException('Failed to get authorizer_access_token: ' . json_encode(
+                    $response,
+                    JSON_UNESCAPED_UNICODE
+                ));
         }
 
         return $response;
-    }
-
-    /**
-     * @throws HttpException
-     * @throws TransportExceptionInterface
-     * @throws ServerExceptionInterface
-     * @throws RedirectionExceptionInterface
-     * @throws DecodingExceptionInterface
-     * @throws ClientExceptionInterface
-     * @throws BadResponseException
-     */
-    public function createPreAuthorizationCode(): array
-    {
-        $response = $this->getClient()->request(
-            'POST',
-            'cgi-bin/component/api_create_preauthcode',
-            [
-                'json' => [
-                    'component_appid' => $this->getAccount()->getAppId(),
-                ],
-            ]
-        )->toArray(false);
-
-        if (empty($response['pre_auth_code'])) {
-            throw new HttpException('Failed to get authorizer_access_token: '.json_encode(
-                $response,
-                JSON_UNESCAPED_UNICODE
-            ));
-        }
-
-        return $response;
-    }
-
-    /**
-     * @throws \HelloDouYin\Kernel\Exceptions\InvalidArgumentException
-     */
-    public function getOfficialAccountWithAccessToken(
-        string $appId,
-        string $accessToken,
-        array $config = []
-    ): OfficialAccountApplication {
-        return $this->getOfficialAccount(new AuthorizerAccessToken($appId, $accessToken), $config);
     }
 
     /**
@@ -290,15 +219,17 @@ class Application implements ApplicationInterface
      * @throws HttpException
      * @throws TransportExceptionInterface
      * @throws ServerExceptionInterface
-     * @throws \HelloDouYin\Kernel\Exceptions\InvalidArgumentException
+     * @throws InvalidArgumentException
      * @throws BadResponseException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
      */
-    public function getMiniAppWithRefreshToken(
+    public function getMiniProgramWithRefreshToken(
         string $appId,
         string $refreshToken,
-        array $config = []
-    ): MiniAppApplication {
-        return $this->getMiniAppWithAccessToken(
+        array  $config = []
+    ): MiniProgramApplication
+    {
+        return $this->getMiniProgramWithAccessToken(
             $appId,
             $this->getAuthorizerAccessToken($appId, $refreshToken),
             $config
@@ -306,22 +237,23 @@ class Application implements ApplicationInterface
     }
 
     /**
-     * @throws \HelloDouYin\Kernel\Exceptions\InvalidArgumentException
+     * @throws InvalidArgumentException
      */
-    public function getMiniAppWithAccessToken(
+    public function getMiniProgramWithAccessToken(
         string $appId,
         string $accessToken,
-        array $config = []
-    ): MiniAppApplication {
-        return $this->getMiniApp(new AuthorizerAccessToken($appId, $accessToken), $config);
+        array  $config = []
+    ): MiniProgramApplication
+    {
+        return $this->getMiniProgram(new AuthorizerAccessToken($appId, $accessToken), $config);
     }
 
     /**
-     * @throws \HelloDouYin\Kernel\Exceptions\InvalidArgumentException
+     * @throws InvalidArgumentException
      */
-    public function getMiniApp(AuthorizerAccessToken $authorizerAccessToken, array $config = []): MiniAppApplication
+    public function getMiniProgram(AuthorizerAccessToken $authorizerAccessToken, array $config = []): MiniProgramApplication
     {
-        $app = new MiniAppApplication(
+        $app = new MiniProgramApplication(
             array_merge(
                 [
                     'app_id' => $authorizerAccessToken->getAppId(),
@@ -340,29 +272,13 @@ class Application implements ApplicationInterface
         return $app;
     }
 
-    protected function createAuthorizerOAuthFactory(string $authorizerAppId, OfficialAccountConfig $config): Closure
-    {
-        return fn () => (new WeChat(
-            [
-                'client_id' => $authorizerAppId,
-
-                'component' => [
-                    'component_app_id' => $this->getAccount()->getAppId(),
-                    'component_access_token' => fn () => $this->getComponentAccessToken()->getToken(),
-                ],
-
-                'redirect_url' => $this->config->get('oauth.redirect_url'),
-            ]
-        ))->scopes((array) $config->get('oauth.scopes', ['snsapi_userinfo']));
-    }
-
     public function createClient(): AccessTokenAwareClient
     {
         return (new AccessTokenAwareClient(
             client: $this->getHttpClient(),
-            accessToken: $this->getComponentAccessToken(),
-            failureJudge: fn (Response $response) => (bool) ($response->toArray()['errcode'] ?? 0),
-            throw: (bool) $this->config->get('http.throw', true),
+            accessToken: $this->getAccessToken(),
+            failureJudge: fn(Response $response) => (bool)($response->toArray()['errcode'] ?? 0),
+            throw: (bool)$this->config->get('http.throw', true),
         ))->setPresets($this->config->all());
     }
 
@@ -370,22 +286,21 @@ class Application implements ApplicationInterface
      * @throws RedirectionExceptionInterface
      * @throws DecodingExceptionInterface
      * @throws ClientExceptionInterface
-     * @throws InvalidArgumentException
      * @throws TransportExceptionInterface
      * @throws HttpException
      * @throws ServerExceptionInterface
-     * @throws BadResponseException
+     * @throws BadResponseException|\Psr\SimpleCache\InvalidArgumentException
      */
     public function getAuthorizerAccessToken(string $appId, string $refreshToken): string
     {
         $cacheKey = sprintf('open-platform.authorizer_access_token.%s.%s', $appId, md5($refreshToken));
 
         /** @phpstan-ignore-next-line */
-        $authorizerAccessToken = (string) $this->getCache()->get($cacheKey);
+        $authorizerAccessToken = (string)$this->getCache()->get($cacheKey);
 
-        if (! $authorizerAccessToken) {
+        if (!$authorizerAccessToken) {
             $response = $this->refreshAuthorizerToken($appId, $refreshToken);
-            $authorizerAccessToken = (string) $response['authorizer_access_token'];
+            $authorizerAccessToken = (string)$response['authorizer_access_token'];
             $this->getCache()->set($cacheKey, $authorizerAccessToken, intval($response['expires_in'] ?? 7200) - 500);
         }
 
@@ -393,13 +308,16 @@ class Application implements ApplicationInterface
     }
 
     /**
+     * @param bool $isSandbox
      * @return array<string, mixed>
      */
-    protected function getHttpClientDefaultOptions(): array
+    protected function getHttpClientDefaultOptions(bool $isSandbox = false): array
     {
+        $is_sandbox = (bool)$this->config->get('is_sandbox');
         return array_merge(
-            ['base_uri' => 'https://developer.toutiao.com/'],
-            (array) $this->config->get('http', [])
+            $is_sandbox ? ['base_uri' => 'https://open-sandbox.douyin.com/'] :
+                ['base_uri' => 'https://developer.toutiao.com/'],
+            (array)$this->config->get('http', [])
         );
     }
 }

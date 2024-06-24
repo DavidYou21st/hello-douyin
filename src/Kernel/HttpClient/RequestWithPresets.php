@@ -160,16 +160,12 @@ trait RequestWithPresets
      */
     public function handleMagicWithCall(string $method, mixed $value = null): static
     {
-        // $client->withAppid();
-        // $client->withAppid('wxf8b4f85f3a794e77');
-        // $client->withAppidAs('sub_appid');
         if (! str_starts_with($method, 'with')) {
             throw new InvalidArgumentException(sprintf('The method "%s" is not supported.', $method));
         }
 
         $key = Str::snakeCase(substr($method, 4));
 
-        // $client->withAppidAs('sub_appid');
         if (str_ends_with($key, '_as')) {
             $key = substr($key, 0, -3);
 

@@ -44,7 +44,7 @@ class UserAgent
         }
 
         if (class_exists(InstalledVersions::class)) {
-            array_unshift($value, 'HelloDouYin-sdk/'.((string) InstalledVersions::getVersion('w7corp/HelloDouYin')));
+            array_unshift($value, 'HelloDouYin-sdk/'.((string) InstalledVersions::getVersion('davidyou/hello-douyin')));
         }
 
         return trim(implode(' ', $value));

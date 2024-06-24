@@ -1,6 +1,6 @@
 # [HelloDouYin](https://HelloDouYin.com)
 
-📦 一个 PHP 抖音开发 SDK。
+ PHP 抖音开发 SDK
 
 
 ## 环境需求
