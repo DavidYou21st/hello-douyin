@@ -109,7 +109,7 @@ class DouYin extends OAuth
             [
                 'form_params' => [
                     Contracts\RFC6749_ABNF_ACCESS_TOKEN => $token,
-                    Contracts\ABNF_OPEN_ID => $this->openid
+                    'open_id' => $this->openid
                 ],
                 'headers' => ['content-type' => 'application/x-www-form-urlencoded'],
             ]
@@ -121,7 +121,7 @@ class DouYin extends OAuth
     protected function mapUserToObject(array $user): Contracts\UserInterface
     {
         return new User([
-            Contracts\ABNF_OPEN_ID => $user['open_id'] ?? null,
+            'open_id' => $user['open_id'] ?? null,
             Contracts\ABNF_NICKNAME => $user['nickname'] ?? null,
             Contracts\ABNF_AVATAR_LARGER => $user['avatar_larger'] ?? null,
             Contracts\ABNF_AVATAR => $user['avatar'] ?? null,
