@@ -3,10 +3,15 @@
 namespace HelloDouYin\Kernel\Contracts;
 
 const ABNF_CLIENT_KEY = 'client_key';
+
 const ABNF_NICKNAME = 'nickname';
 const ABNF_AVATAR_LARGER = 'avatar_larger';
+
 const ABNF_AVATAR = 'avatar';
 const ABNF_UNION_ID = 'union_id';
+
+const ABNF_OPEN_ID = 'open_id';
+
 
 interface UserInterface
 {

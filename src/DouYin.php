@@ -120,7 +120,7 @@ class DouYin extends OAuth
     protected function mapUserToObject(array $user): Contracts\UserInterface
     {
         return new User([
-            'open_id' => $user['open_id'] ?? null,
+            Contracts\ABNF_OPEN_ID => $user['open_id'] ?? null,
             Contracts\ABNF_NICKNAME => $user['nickname'] ?? null,
             Contracts\ABNF_AVATAR_LARGER => $user['avatar_larger'] ?? null,
             Contracts\ABNF_AVATAR => $user['avatar'] ?? null,
