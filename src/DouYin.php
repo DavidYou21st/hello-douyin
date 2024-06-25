@@ -106,16 +106,15 @@ class DouYin extends OAuth
     protected function getUserByToken(string $token): array
     {
         $response = $this->getHttpClient()->post($this->baseUrl . '/oauth/userinfo/', [
-            [
-                'form_params' => [
-                    Contracts\RFC6749_ABNF_ACCESS_TOKEN => $token,
-                    'open_id' => $this->openid
-                ],
-                'headers' => ['content-type' => 'application/x-www-form-urlencoded'],
-            ]
+            'form_params' => [
+                Contracts\RFC6749_ABNF_ACCESS_TOKEN => $token,
+                'open_id' => $this->openid
+            ],
+            'headers' => ['content-type' => 'application/x-www-form-urlencoded']
         ]);
+        $body = $this->fromJsonBody($response);
 
-        return $this->fromJsonBody($response);
+        return $body['data'] ?? [];
     }
 
     protected function mapUserToObject(array $user): Contracts\UserInterface

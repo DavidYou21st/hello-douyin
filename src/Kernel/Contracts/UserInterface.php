@@ -14,6 +14,8 @@ interface UserInterface
 
     public function getUnionId(): ?string;
 
+    public function getNickname(): ?string;
+
     public function getAvatarLarger(): ?string;
 
     public function getAvatar(): ?string;
