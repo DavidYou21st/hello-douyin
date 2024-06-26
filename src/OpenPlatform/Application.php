@@ -143,9 +143,9 @@ class Application implements ApplicationInterface
     public function getOauthClientToken(): AccessTokenInterface
     {
         if (!$this->accessToken) {
-            $this->accessToken = new AccessToken(
-                appId: $this->getAccount()->getAppId(),
-                secret: $this->getAccount()->getSecret(),
+            $this->accessToken = new OauthClientToken(
+                client_key: $this->getAccount()->getAppId(),
+                client_secret: $this->getAccount()->getSecret(),
                 cache: $this->getCache(),
                 httpClient: $this->getHttpClient(),
                 isSandbox: $this->getAccount()->isSandbox(),
