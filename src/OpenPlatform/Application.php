@@ -180,6 +180,35 @@ class Application implements ApplicationInterface
     }
 
     /**
+     * jsb_ticket
+     */
+    public function jsbTicket(AccessTokenInterface $oauthClientToken): string
+    {
+        $response = $this->getClient()->request(
+            'GET',
+            'js/getticket',
+            [
+                'query' => [
+                    'Scope' => 'js.ticket',
+                ],
+                'headers' => [
+                    'access-token' => $oauthClientToken->getToken(),
+                    'content-type' => 'application/json',
+                ],
+            ]
+        )->toArray(false);
+
+        if (empty($response['data']['ticket'])) {
+            throw new HttpException('Failed to get ticket: ' . json_encode(
+                    $response,
+                    JSON_UNESCAPED_UNICODE
+                ));
+        }
+
+        return $response['data']['ticket'];
+    }
+
+    /**
      * @throws TransportExceptionInterface
      * @throws HttpException
      * @throws ServerExceptionInterface

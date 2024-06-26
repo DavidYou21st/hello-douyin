@@ -49,7 +49,7 @@ class OauthClientToken implements RefreshableAccessTokenInterface
 
     public function getKey(): string
     {
-        return $this->key ?? $this->key = sprintf('%s.oauth.client_token.%s.%s', static::CACHE_KEY_PREFIX, $this->appId, $this->secret);
+        return $this->key ?? $this->key = sprintf('%s.oauth.client_token.%s.%s', static::CACHE_KEY_PREFIX, $this->client_key, $this->client_secret);
     }
 
     public function setKey(string $key): static
@@ -125,7 +125,10 @@ class OauthClientToken implements RefreshableAccessTokenInterface
             'json' => [
                 'grant_type' => 'client_credential',
                 'client_key' => $this->client_key,
-                'secret' => $this->secret,
+                'client_secret' => $this->client_secret,
+            ],
+            'headers' => [
+                'Content-Type' => 'application/json',
             ],
         ])->toArray(false);
 
