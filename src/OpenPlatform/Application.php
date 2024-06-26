@@ -147,7 +147,6 @@ class Application implements ApplicationInterface
                 client_key: $this->getAccount()->getAppId(),
                 client_secret: $this->getAccount()->getSecret(),
                 cache: $this->getCache(),
-                httpClient: $this->getHttpClient(),
                 isSandbox: $this->getAccount()->isSandbox(),
             );
         }
@@ -346,7 +345,7 @@ class Application implements ApplicationInterface
         $is_sandbox = (bool)$this->config->get('is_sandbox');
         return array_merge(
             $is_sandbox ? ['base_uri' => 'https://open-sandbox.douyin.com/'] :
-                ['base_uri' => 'https://developer.toutiao.com/'],
+                ['base_uri' => 'https://open.douyin.com/'],
             (array)$this->config->get('http', [])
         );
     }

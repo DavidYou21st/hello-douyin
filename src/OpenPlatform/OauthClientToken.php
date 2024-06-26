@@ -121,15 +121,13 @@ class OauthClientToken implements RefreshableAccessTokenInterface
      */
     public function getAccessToken(): string
     {
-        $response = $this->httpClient->request('POST', 'oauth/client_token', [
+        $response = $this->httpClient->request('POST', 'oauth/client_token/', [
             'json' => [
                 'grant_type' => 'client_credential',
                 'client_key' => $this->client_key,
                 'client_secret' => $this->client_secret,
             ],
-            'headers' => [
-                'Content-Type' => 'application/json',
-            ],
+            'headers' => ['Content-Type' => 'application/json'],
         ])->toArray(false);
 
         if (empty($response['data']['access_token'])) {
