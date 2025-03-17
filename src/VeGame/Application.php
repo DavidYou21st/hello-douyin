@@ -28,7 +28,7 @@ class Application
      *
      * @return AccessTokenInterface
      */
-    public function getSTSToken(): AccessTokenInterface
+    public function stsToken(): AccessTokenInterface
     {
         if (!$this->stsToken) {
             $this->stsToken = new STSToken(
@@ -37,8 +37,7 @@ class Application
                     sk: (string)$this->config->get('sk'),
                     version: (string)$this->config->get('version'),
                 ),
-                cache: $this->getCache(),
-                httpClient: $this->getHttpClient(),
+                cache: $this->getCache()
             );
         }
 

@@ -24,8 +24,6 @@ use function is_string;
 use function json_encode;
 use function sprintf;
 
-date_default_timezone_set('UTC');
-
 class STSToken implements RefreshableAccessTokenInterface
 {
     protected HttpClientInterface $httpClient;
@@ -34,18 +32,23 @@ class STSToken implements RefreshableAccessTokenInterface
 
     const CACHE_KEY_PREFIX = 'douyin_vegame';
 
+    protected string $host = 'open.volcengineapi.com';
+
+    protected string $contentType = "application/x-www-form-urlencoded";
     public function __construct(
         protected AccountInterface $account,
         ?CacheInterface            $cache = null,
         ?HttpClientInterface       $httpClient = null,
         protected ?int             $expire = 300,
         protected ?string          $key = null,
+        protected ?string          $date = null,
     )
     {
         $this->httpClient = $httpClient ?? (
-        HttpClient::create(['base_uri' => 'https://open.volcengineapi.com'])
+        HttpClient::create(['base_uri' => "https://" . $this->host])
         );
         $this->cache = $cache ?? new Psr16Cache(new FilesystemAdapter(namespace: 'hello_douyin', defaultLifetime: 1500));
+        $this->getUTCDateTime();
     }
 
     public function getKey(): string
@@ -111,13 +114,35 @@ class STSToken implements RefreshableAccessTokenInterface
         return $this->getAccessToken();
     }
 
-    public function getCredential()
+    private function getCredential(): array
     {
         return [
             "access_key" => $this->account->getAK(),
-            "secret_key" => $sk,
+            "secret_key" => $this->account->getSK(),
             "service" => "veGame",
             "region" => "cn-north-1"
+        ];
+    }
+
+    private function getQuery(): array
+    {
+        return [
+            'Action' => 'STSToken',
+            'Version' => $this->account->getVersion(),
+            'ak' => $this->account->getAK(),
+            'sk' => $this->account->getSK(),
+            'expire' => (string)$this->expire,
+        ];
+    }
+
+    private function getHeaders(array $body = []): array
+    {
+        return [
+            'Host' => $this->host,
+            'Content-Type' => $this->contentType,
+            'X-Date' => $this->date,
+            "X-Content-Sha256" => $this->hashSha256(json_encode($body)),
+            "Authorization" => $this->authorization($body),
         ];
     }
 
@@ -130,27 +155,102 @@ class STSToken implements RefreshableAccessTokenInterface
      * @throws \Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface
      * @throws \Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface
      */
-    public function getAccessToken(): string
+    public function getAccessToken(array $body = []): string
     {
         $response = $this->httpClient->request('GET', '/', [
-            'query' => [
-                'Action' => 'STSToken',
-                'Version' => $this->account->getVersion(),
-                'Ak' => $this->account->getAK(),
-                'Sk' => $this->account->getSK(),
-                'Expire' => $this->expire,
-            ],
-            'headers' => [
-                'Content-Type' => 'application/x-www-form-urlencoded',
-            ],
+            'query' => $this->getQuery(),
+            'headers' => $this->getHeaders($body),
+            'json' => $body,
         ])->toArray(false);
 
-        if (empty($response['Token'])) {
+        if (empty($response['Result']['token'])) {
             throw new HttpException('Failed to get sts_token: ' . json_encode($response, JSON_UNESCAPED_UNICODE));
         }
 
-        $this->cache->set($this->getKey(), $response['Token'], strtotime($response['expires_in']) - time());
+        $this->cache->set($this->getKey(), $response['Result']['token'], strtotime($response['Result']['expire_at']) - time());
 
-        return $response['Token'];
+        return $response['Result']['token'];
+    }
+
+    /**
+     * sha256 hash算法
+     *
+     * @param string $content
+     * @return string
+     */
+    private function hashSha256(string $content): string
+    {
+        return hash("sha256", $content);
+    }
+
+    /**
+     * sha256 非对称加密
+     *
+     * @param string $key
+     * @param string $content
+     * @return string
+     */
+    function hmacSha256(string $key, string $content): string
+    {
+        return hash_hmac("sha256", $content, $key);
+    }
+
+    private function getUTCDateTime(): void
+    {
+        $date = new \DateTime();
+        $date->setTimezone(new \DateTimeZone('UTC'));
+        $this->date = $date->format('Ymd\THis\Z');
+    }
+
+    public function authorization(array $body = []): string
+    {
+        $credential = $this->getCredential();
+        $shortDate = substr($this->date, 0, 8);
+        $xContentSha256 = $this->hashSha256(json_encode($body));
+
+        $signedHeadersStr = "host;x-date;x-content-sha256;content-type";
+        $canonicalRequestStr = 'GET' . "\n" . '/' . "\n" . $this->buildParams($this->getQuery()) . "\n" .
+            "host:" . $this->host . "\n" .
+            "x-date:" . $this->date . "\n" .
+            "x-content-sha256:" . $xContentSha256 . "\n" .
+            "content-type:" . $this->contentType . "\n\n" .
+            $signedHeadersStr . "\n" . $xContentSha256;
+
+        $hashedCanonicalRequest = $this->hashSha256($canonicalRequestStr);
+        $credentialScope = $shortDate . "/" . $credential["region"] . "/" . $credential["service"] . "/request";
+        $signedCanonicalStr = "HMAC-SHA256\n" . $this->date . "\n" . $credentialScope . "\n" . $hashedCanonicalRequest;
+
+        $kDate = $this->hmacSha256($this->account->getSK(), $shortDate);
+
+        $kRegion = $this->hmacSha256(hex2bin($kDate), $credential["region"]);
+
+        $kService = $this->hmacSha256(hex2bin($kRegion), $credential["service"]);
+
+        $kSigning = $this->hmacSha256(hex2bin($kService), "request");
+
+        $signature = $this->hmacSha256(hex2bin($kSigning), $signedCanonicalStr);
+
+        return "HMAC-SHA256 Credential=" . $credential["access_key"] . "/" . $credentialScope . ", SignedHeaders=" . $signedHeadersStr . ", Signature=" . $signature;
+    }
+
+    /**
+     * @param array $params
+     * @return string
+     */
+    private function buildParams(array $params): string
+    {
+        $query = '';
+        ksort($params);
+
+        foreach ($params as $key => $value) {
+            if (is_array($value)) {
+                foreach ($value as $v) {
+                    $query .= urlencode($key) . "=" . urlencode($v) . "&";
+                }
+            } else {
+                $query .= urlencode($key) . "=" . urlencode($value) . "&";
+            }
+        }
+        return rtrim($query, "&");
     }
 }
