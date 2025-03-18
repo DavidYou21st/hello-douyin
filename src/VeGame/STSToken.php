@@ -53,7 +53,7 @@ class STSToken implements RefreshableAccessTokenInterface
 
     public function getKey(): string
     {
-        return $this->key ?? $this->key = sprintf('%s:%s_%s:sts_token', static::CACHE_KEY_PREFIX, $this->account->getAK(), $this->account->getSK());
+        return $this->key ?? $this->key = sprintf('%s_%s_%s_sts_token', static::CACHE_KEY_PREFIX, $this->account->getAK(), $this->account->getSK());
     }
 
     public function setKey(string $key): static
